@@ -1,3 +1,7 @@
+## FUTURE VERSION
+
+* Adds additional `TeXArg` types `parentheses_lr`, `caret_braces`, and `underscore_braces`.
+
 ## 0.3.0
 
 * Adds support for custom keyboard pages using the new `customPages` attribute that takes a list of `CustomButtonPage`s.
