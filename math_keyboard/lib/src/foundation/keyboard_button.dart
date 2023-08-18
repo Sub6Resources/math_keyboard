@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:math_keyboard/src/custom_button_pages/custom_button_page.dart';
 import 'package:math_keyboard/src/custom_key_icons/custom_key_icons.dart';
 import 'package:math_keyboard/src/foundation/node.dart';
@@ -10,6 +10,8 @@ abstract class KeyboardButtonConfig {
     this.flex,
     this.heightFactor,
     this.keyboardCharacters = const [],
+    this.args,
+    this.value = '',
   });
 
   /// Optional flex.
@@ -31,6 +33,12 @@ abstract class KeyboardButtonConfig {
   ///
   /// Must not be `null` but can be empty.
   final List<String> keyboardCharacters;
+
+  /// List defining the arguments for the function behind this button.
+  final List<TeXArg>? args;
+
+  /// The value in tex.
+  final String value;
 }
 
 /// Class representing a button configuration for a [FunctionButton].
@@ -38,8 +46,8 @@ class BasicKeyboardButtonConfig extends KeyboardButtonConfig {
   /// Constructs a [KeyboardButtonConfig].
   const BasicKeyboardButtonConfig({
     required this.label,
-    required this.value,
-    this.args,
+    required String value,
+    List<TeXArg>? args,
     this.asTex = false,
     this.highlighted = false,
     List<String> keyboardCharacters = const [],
@@ -49,16 +57,12 @@ class BasicKeyboardButtonConfig extends KeyboardButtonConfig {
           flex: flex,
           keyboardCharacters: keyboardCharacters,
           heightFactor: heightFactor,
+          value: value,
+          args: args,
         );
 
   /// The label of the button.
   final String label;
-
-  /// The value in tex.
-  final String value;
-
-  /// List defining the arguments for the function behind this button.
-  final List<TeXArg>? args;
 
   /// Whether to display the label as TeX or as plain text.
   final bool asTex;
@@ -95,6 +99,58 @@ class SubmitButtonConfig extends KeyboardButtonConfig {
 class PageButtonConfig extends KeyboardButtonConfig {
   /// Constructs a [PageButtonConfig].
   const PageButtonConfig({int? flex}) : super(flex: flex);
+}
+
+/// Class representing a button that has two states depending on the
+/// current keyboard shift.
+class ShiftingKeyboardButtonConfig extends KeyboardButtonConfig {
+
+  /// Constructs a [ShiftingKeyboardButtonConfig].
+  const ShiftingKeyboardButtonConfig({
+    required this.standardConfig,
+    required this.shiftedConfig,
+  }): super();
+
+  /// The button to show when the keyboard is un-shifted.
+  final KeyboardButtonConfig standardConfig;
+
+  /// The button to show when the keyboard is shifted.
+  final KeyboardButtonConfig shiftedConfig;
+}
+
+/// Class representing a button configuration that toggles the keyboard shift.
+class ShiftButtonConfig extends KeyboardButtonConfig {
+  /// Constructs a [ShiftButtonConfig].
+  const ShiftButtonConfig({
+    int? flex,
+    double? heightFactor,
+    this.shiftIcon = Icons.keyboard_capslock,
+    this.downshiftIcon,
+  }): super(
+    flex: flex,
+    heightFactor: heightFactor,
+  );
+
+  /// Icon when the keyboard is un-shifted.
+  final IconData shiftIcon;
+
+  /// Optional icon when the keyboard is shifted.
+  final IconData? downshiftIcon;
+}
+
+/// Class representing an invisible button configuration that is available only
+/// through physical keyboard shortcuts.
+class HiddenButtonConfig extends KeyboardButtonConfig {
+  /// Constructs a [HiddenButtonConfig]
+  const HiddenButtonConfig({
+    required String value,
+    List<TeXArg>? args,
+    required List<String> keyboardCharacters,
+  }): super(
+    value: value,
+    args: args,
+    keyboardCharacters: keyboardCharacters,
+  );
 }
 
 /// List of keyboard button configs for the digits from 0-9.

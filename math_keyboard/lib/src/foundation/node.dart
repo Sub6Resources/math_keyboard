@@ -153,12 +153,18 @@ class TeXFunction extends TeX {
         return '_{';
       case TeXArg.caret_braces:
         return '^{';
+      case TeXArg.braces_lr:
+        return r'\left{';
       case TeXArg.brackets:
         return '[';
+      case TeXArg.brackets_lr:
+        return r'\left[';
       case TeXArg.parentheses:
         return '(';
       case TeXArg.parentheses_lr:
         return r'\left(';
+      case TeXArg.bars_lr:
+        return r'\left|';
     }
   }
 
@@ -169,12 +175,18 @@ class TeXFunction extends TeX {
       case TeXArg.underscore_braces:
       case TeXArg.caret_braces:
         return '}';
+      case TeXArg.braces_lr:
+        return r'\right}';
       case TeXArg.brackets:
         return ']';
+      case TeXArg.brackets_lr:
+        return r'\right]';
       case TeXArg.parentheses:
         return ')';
       case TeXArg.parentheses_lr:
         return r'\right)';
+      case TeXArg.bars_lr:
+        return r'\right|';
     }
   }
 
@@ -260,10 +272,22 @@ enum TeXArg {
   /// it (like summation)
   caret_braces,
 
+  /// \left{ \right}
+  ///
+  /// These braces are visible and adjust to automatically match the height
+  /// of internal content.
+  braces_lr,
+
   /// [ ]
   ///
   /// Brackets are only used for the nth root at the moment.
   brackets,
+
+  /// \left[ \right]
+  ///
+  /// These brackets are visible and automatically match the height of internal
+  /// content.
+  brackets_lr,
 
   /// ()
   ///
@@ -277,4 +301,9 @@ enum TeXArg {
   /// These parentheses automatically expand to match the size of their content,
   /// making them more visually appealing in most cases.
   parentheses_lr,
+
+  /// \left| \right|
+  ///
+  /// These bars mark an absolute value operation.
+  bars_lr,
 }

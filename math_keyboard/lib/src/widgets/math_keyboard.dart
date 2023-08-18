@@ -229,6 +229,7 @@ class _KeyboardBodyState extends State<_KeyboardBody> {
   void _removeInsets(MathKeyboardViewInsetsState? insetsState) {
     if (insetsState == null) return;
     SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (widget.insetsState == null) return;
       widget.insetsState![ObjectKey(this)] = null;
     });
   }
@@ -349,7 +350,13 @@ class _Buttons extends StatelessWidget {
                       }),
                   child: Row(
                     children: [
-                      for (final config in row)
+                      for (final config in row.map((config) {
+                        return config is ShiftingKeyboardButtonConfig
+                            ? controller.shifted
+                                ? config.shiftedConfig
+                                : config.standardConfig
+                            : config;
+                      }))
                         if (config is BasicKeyboardButtonConfig)
                           _BasicButton(
                             flex: config.flex,
@@ -383,6 +390,15 @@ class _Buttons extends StatelessWidget {
                             onTap: controller.togglePage,
                             highlightLevel: 1,
                             fontSize: fontSize,
+                          )
+                        else if (config is ShiftButtonConfig)
+                          _BasicButton(
+                            flex: config.flex,
+                            icon: controller.shifted
+                                ? config.downshiftIcon ?? config.shiftIcon
+                                : config.shiftIcon,
+                            onTap: controller.toggleShift,
+                            highlightLevel: controller.shifted? 1: 0,
                           )
                         else if (config is PreviousButtonConfig)
                           _NavigationButton(

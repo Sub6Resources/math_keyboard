@@ -22,8 +22,9 @@ class MathField extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.controller,
+    this.keyboardController,
     this.keyboardType = MathKeyboardType.expression,
-    this.variables = const ['x'],
+    this.variables = const [],
     this.decoration = const InputDecoration(),
     this.onChanged,
     this.onSubmitted,
@@ -42,6 +43,17 @@ class MathField extends StatefulWidget {
   /// If you pass a controller, you need to make sure that you also take care
   /// of disposing it.
   final MathFieldEditingController? controller;
+
+  /// The controller for the keyboard of the math field.
+  ///
+  /// This controller allows you to close, open, and toggle the keyboard while
+  /// retaining focus state in the field.
+  /// If no controller is supplied, the math field state creates its own
+  /// controller.
+  ///
+  /// If you pass a controller, you need to make sure that you also take care
+  /// of disposing it.
+  final MathFieldKeyboardController? keyboardController;
 
   /// The keyboard type.
   ///
@@ -156,12 +168,9 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
         descendantsAreFocusable: false,
       );
   late var _controller = widget.controller ?? MathFieldEditingController();
+  late var _keyboardController = widget.keyboardController ?? MathFieldKeyboardController();
 
-  List<String> get _variables => [
-        r'\pi',
-        'e',
-        ...widget.variables,
-      ];
+  List<String> get _variables => widget.variables;
 
   bool get _isKeyboardShown =>
       _overlayEntry != null &&
@@ -181,6 +190,7 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
     });
     _cursorBlinkController.addListener(_handleBlinkUpdate);
     _controller.addListener(_handleControllerUpdate);
+    _keyboardController.addListener(_handleKeyboardControllerUpdate);
   }
 
   @override
@@ -198,6 +208,17 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
 
       _controller = widget.controller ?? MathFieldEditingController();
       _controller.addListener(_handleControllerUpdate);
+    }
+
+    if (oldWidget.keyboardController != widget.controller) {
+      if(oldWidget.keyboardController != null) {
+        _keyboardController.removeListener(_handleKeyboardControllerUpdate);
+      } else {
+        _keyboardController.dispose();
+      }
+
+      _keyboardController = widget.keyboardController ?? MathFieldKeyboardController();
+      _keyboardController.addListener(_handleKeyboardControllerUpdate);
     }
 
     if (oldWidget.focusNode != widget.focusNode) {
@@ -234,6 +255,12 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
       _controller.removeListener(_handleControllerUpdate);
     } else {
       _controller.dispose();
+    }
+
+    if (widget.keyboardController != null) {
+      _keyboardController.removeListener(_handleKeyboardControllerUpdate);
+    } else {
+      _keyboardController.dispose();
     }
 
     if (widget.focusNode == null) {
@@ -287,16 +314,39 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
     widget.onChanged?.call(expression);
   }
 
+  void _handleKeyboardControllerUpdate() {
+    if(_focusNode.hasFocus) {
+      if (!_keyboardController.isKeyboardOpen) {
+        _keyboardSlideController.reverse();
+      } else {
+        if(_keyboardSlideController.value > 0) {
+          _keyboardSlideController.stop();
+          _openKeyboard(context);
+          _keyboardSlideController.forward(from: _keyboardSlideController.value);
+        } else {
+          _openKeyboard(context);
+          _keyboardSlideController.forward(from: 0);
+        }
+      }
+
+      setState(() {
+        // Mark as dirty in order to respond to the keyboard update
+      });
+    }
+  }
+
   /// Handles any focus changes of the math field, i.e. essentially when
   /// the math keyboard should be opened and when it should be closed.
   ///
   /// When [open] is true, the keyboard should be opened and vice versa.
   void _handleFocusChanged(BuildContext context, {required bool open}) {
     if (!open) {
+      _keyboardController._keyboardOpen = false;
       _keyboardSlideController.reverse();
       _cursorBlinkController.value = 1 / 2;
     } else {
       _openKeyboard(context);
+      _keyboardController._keyboardOpen = true;
       _keyboardSlideController.forward(from: 0);
       _cursorBlinkController.repeat();
 
@@ -433,22 +483,63 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
   KeyEventResult? _handleCharacter(
       String? character, List<KeyboardButtonConfig> configs) {
     if (character == null) return null;
-    final lowerCaseCharacter = character.toLowerCase();
+
+    final expandedConfigs = configs.expand((config) {
+      return (config is ShiftingKeyboardButtonConfig)
+          ? [config.standardConfig, config.shiftedConfig]
+          : [config];
+    });
 
     // The button configs take precedence over any variables.
-    for (final config in configs) {
-      if (config is! BasicKeyboardButtonConfig) continue;
+
+    // Handle function keyboard shortcuts
+    for (final config in expandedConfigs) {
+      if (config is! BasicKeyboardButtonConfig &&
+          config is! HiddenButtonConfig) continue;
       if (config.keyboardCharacters.isEmpty) continue;
 
-      if (config.keyboardCharacters
-          .any((element) => element.toLowerCase() == lowerCaseCharacter)) {
-        final basicConfig = config;
-        if (basicConfig.args != null) {
-          _controller.addFunction(basicConfig.value, basicConfig.args!);
-        } else {
-          _controller.addLeaf(basicConfig.value);
+      for (final element in config.keyboardCharacters) {
+        if(element.length > 1 && element.endsWith(character)) {
+          final currentValue = _controller.currentNode.children.reversed.fold<String>(
+            character,
+            (prev, value) {
+              if(value is! TeXLeaf) return prev;
+              return '${value.expression}$prev';
+            },
+          );
+          if(currentValue.endsWith(element)) {
+            for(var i = 0; i < element.length - 1; i++) {
+              _controller.goBack(deleteMode: true);
+            }
+
+            final basicConfig = config;
+            if (basicConfig.args != null) {
+              _controller.addFunction(basicConfig.value, basicConfig.args!);
+            } else {
+              _controller.addLeaf(basicConfig.value);
+            }
+            return KeyEventResult.handled;
+          }
         }
-        return KeyEventResult.handled;
+      }
+    }
+
+    // Handle single characters
+    for (final config in expandedConfigs) {
+      if (config is! BasicKeyboardButtonConfig &&
+          config is! HiddenButtonConfig) continue;
+      if (config.keyboardCharacters.isEmpty) continue;
+
+      for (final element in config.keyboardCharacters) {
+        if (character == element) {
+          final basicConfig = config;
+          if (basicConfig.args != null) {
+            _controller.addFunction(basicConfig.value, basicConfig.args!);
+          } else {
+            _controller.addLeaf(basicConfig.value);
+          }
+          return KeyEventResult.handled;
+        }
       }
     }
 
@@ -459,19 +550,19 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
     }
 
     // Handle generally specified constants.
-    if (lowerCaseCharacter == 'p') {
-      _controller.addLeaf(r'{\pi}');
-      return KeyEventResult.handled;
-    }
-    if (lowerCaseCharacter == 'e') {
-      _controller.addLeaf('{e}');
-      return KeyEventResult.handled;
-    }
+    // if (character.toLowerCase() == 'p') {
+    //   _controller.addLeaf(r'{\pi}');
+    //   return KeyEventResult.handled;
+    // }
+    // if (character.toLowerCase() == 'e') {
+    //   _controller.addLeaf('{e}');
+    //   return KeyEventResult.handled;
+    // }
 
     // Handle user-specified variables.
     for (final variable in widget.variables) {
       final startingCharacter = variable.substring(0, 1).toLowerCase();
-      if (startingCharacter == lowerCaseCharacter) {
+      if (startingCharacter == character.toLowerCase()) {
         _controller.addLeaf('{$variable}');
         return KeyEventResult.handled;
       }
@@ -518,7 +609,7 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
     return WillPopScope(
       onWillPop: () async {
         if (_isKeyboardShown) {
-          _closeKeyboard();
+          _keyboardController.closeKeyboard();
           return false;
         }
         return true;
@@ -714,6 +805,9 @@ class MathFieldEditingController extends ChangeNotifier {
   /// The index of the page to show on the keyboard.
   int page = 0;
 
+  /// Whether or not the keyboard is currently shifted.
+  bool shifted = false;
+
   /// The root node of the expression.
   TeXNode root = TeXNode(null);
 
@@ -906,7 +1000,7 @@ class MathFieldEditingController extends ChangeNotifier {
     currentNode.children
         .removeRange(currentNode.courserPosition, currentNode.children.length);
     // Expressions that indicate operators.
-    final operators = ['+', '-', r'\cdot', r'\div'];
+    final operators = ['+', '-', r'\cdot ', r'\div ', '='];
     // We need to determine whether we want to append an empty fraction or
     // divide the last expression, therefore keep it as the numerator.
     var keepNumerator = true;
@@ -988,13 +1082,13 @@ class MathFieldEditingController extends ChangeNotifier {
         frac.argNodes.first.children.insert(0, lastTeX);
       }
     }
-    // CASE 3: Power
+    // CASE 3: Power and Subscript
     // There's one more case where we need to take more off the current node
     // then the last expression. The power has it's first argument (the base)
     // in front of itself. Therefore we need to determine the base and insert
     // it in the fractions first argument. We can use a recursive call for
     // that.
-    else if (lastTeX.expression.startsWith('^')) {
+    else if (lastTeX.expression.startsWith('^') || lastTeX.expression.startsWith('_')) {
       _takeNumerator(frac);
     }
   }
@@ -1013,6 +1107,12 @@ class MathFieldEditingController extends ChangeNotifier {
   /// Increments to the next available button page.
   void togglePage() {
     page++;
+    notifyListeners();
+  }
+
+  /// Toggles the keyboard shift on or off.
+  void toggleShift() {
+    shifted = !shifted;
     notifyListeners();
   }
 
@@ -1041,5 +1141,35 @@ class MathFieldEditingController extends ChangeNotifier {
     // overlay might be disposed after the math field is disposed.
     if (_disposed) return;
     super.removeListener(listener);
+  }
+}
+
+/// A controller for the keyboard attached to an editable math field.
+class MathFieldKeyboardController extends ChangeNotifier {
+  /// Constructs a [MathKeyboardViewModel].
+  MathFieldKeyboardController();
+
+  /// Whether or not the keyboard is currently open.
+  bool _keyboardOpen = false;
+
+  /// Whether or not the keyboard is currently open.
+  bool get isKeyboardOpen => _keyboardOpen;
+
+  /// Opens the keyboard.
+  void openKeyboard() {
+    _keyboardOpen = true;
+    notifyListeners();
+  }
+
+  /// Closes the keyboard.
+  void closeKeyboard() {
+    _keyboardOpen = false;
+    notifyListeners();
+  }
+
+  /// Toggles the keyboard to the opposite of its current state.
+  void toggleKeyboard() {
+    _keyboardOpen = !_keyboardOpen;
+    notifyListeners();
   }
 }
