@@ -293,7 +293,7 @@ class _Variables extends StatelessWidget {
                 width: 56,
                 child: _VariableButton(
                   name: variables[index],
-                  onTap: () => controller.addLeaf('{${variables[index]}}'),
+                  onTap: () => controller.addLeaf(variables[index], variables[index]),
                 ),
               );
             },
@@ -365,8 +365,16 @@ class _Buttons extends StatelessWidget {
                                 ? () => controller.addFunction(
                                       config.value,
                                       config.args!,
+                                      config.keyboardCharacters.isNotEmpty
+                                          ? config.keyboardCharacters.first
+                                          : '',
                                     )
-                                : () => controller.addLeaf(config.value),
+                                : () => controller.addLeaf(
+                              config.value,
+                              config.keyboardCharacters.isNotEmpty
+                                ? config.keyboardCharacters.first
+                                : '',
+                            ),
                             asTex: config.asTex,
                             highlightLevel: config.highlighted ? 1 : 0,
                             fontSize: fontSize,

@@ -548,9 +548,9 @@ class _ControllerPageState extends State<_ControllerPage> {
                 ),
                 child: OutlinedButton(
                   onPressed: () {
-                    _magicController.addLeaf('+');
-                    _magicController.addLeaf('4');
-                    _magicController.addLeaf('2');
+                    _magicController.addLeaf('+', '+');
+                    _magicController.addLeaf('4', '4');
+                    _magicController.addLeaf('2', '2');
                   },
                   child: Text('Add 42'),
                 ),

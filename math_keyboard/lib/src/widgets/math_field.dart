@@ -500,23 +500,23 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
 
       for (final element in config.keyboardCharacters) {
         if(element.length > 1 && element.endsWith(character)) {
-          final currentValue = _controller.currentNode.children.reversed.fold<String>(
-            character,
+          final currentValue = _controller.currentNode.rawInput.reversed.fold<List<String>>(
+            [character],
             (prev, value) {
-              if(value is! TeXLeaf) return prev;
-              return '${value.expression}$prev';
+              return prev..insert(0, value);
             },
           );
-          if(currentValue.endsWith(element)) {
-            for(var i = 0; i < element.length - 1; i++) {
+          if(currentValue.endsWithExactly(element)) {
+            final endSequenceLength = currentValue.endsWithExactlyLength(element);
+            for(var i = 0; i < endSequenceLength - 1; i++) {
               _controller.goBack(deleteMode: true);
             }
 
             final basicConfig = config;
             if (basicConfig.args != null) {
-              _controller.addFunction(basicConfig.value, basicConfig.args!);
+              _controller.addFunction(basicConfig.value, basicConfig.args!, basicConfig.keyboardCharacters.isNotEmpty? basicConfig.keyboardCharacters.first: basicConfig.value);
             } else {
-              _controller.addLeaf(basicConfig.value);
+              _controller.addLeaf(basicConfig.value, basicConfig.keyboardCharacters.isNotEmpty? basicConfig.keyboardCharacters.first: basicConfig.value);
             }
             return KeyEventResult.handled;
           }
@@ -534,9 +534,9 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
         if (character == element) {
           final basicConfig = config;
           if (basicConfig.args != null) {
-            _controller.addFunction(basicConfig.value, basicConfig.args!);
+            _controller.addFunction(basicConfig.value, basicConfig.args!, basicConfig.keyboardCharacters.isNotEmpty? basicConfig.keyboardCharacters.first: basicConfig.value);
           } else {
-            _controller.addLeaf(basicConfig.value);
+            _controller.addLeaf(basicConfig.value, basicConfig.keyboardCharacters.isNotEmpty? basicConfig.keyboardCharacters.first: basicConfig.value);
           }
           return KeyEventResult.handled;
         }
@@ -563,7 +563,7 @@ class _MathFieldState extends State<MathField> with TickerProviderStateMixin {
     for (final variable in widget.variables) {
       final startingCharacter = variable.substring(0, 1).toLowerCase();
       if (startingCharacter == character.toLowerCase()) {
-        _controller.addLeaf('{$variable}');
+        _controller.addLeaf(variable, variable);
         return KeyEventResult.handled;
       }
     }
@@ -745,6 +745,11 @@ class _FieldPreview extends StatelessWidget {
           // list, e.g. in vector notation (there is a padding to the right
           // of the comma).
           '{${decimalSeparator(context)}}',
+        )
+        .replaceAll(
+          // Remove any hidden whitespace
+          '​',
+          '',
         );
 
     return ConstrainedBox(
@@ -936,26 +941,26 @@ class MathFieldEditingController extends ChangeNotifier {
   }
 
   /// Add leaf to the current node.
-  void addLeaf(String tex) {
-    currentNode.addTeX(TeXLeaf(tex));
+  void addLeaf(String tex, String raw) {
+    currentNode.addTeX(TeXLeaf(tex), raw);
     notifyListeners();
   }
 
   /// Add function to the current node.
-  void addFunction(String tex, List<TeXArg> args) {
+  void addFunction(String tex, List<TeXArg> args, String raw) {
     currentNode.removeCursor();
     final func = TeXFunction(tex, currentNode, args);
 
     /// Adding a pow requires further action, that's why we handle it in it's
     /// own function.
     if (tex.startsWith('^')) {
-      addPow(func);
+      addPow(func, raw);
     }
     // The same applies for fractions.
-    else if (tex == r'\frac') {
-      addFrac(func);
+    else if (tex == r'\frac' || tex == r'​\frac') {
+      addFrac(func, raw);
     } else {
-      currentNode.addTeX(func);
+      currentNode.addTeX(func, raw);
       currentNode = func.argNodes.first;
     }
     currentNode.setCursor();
@@ -966,7 +971,7 @@ class MathFieldEditingController extends ChangeNotifier {
   ///
   /// If the expression is ^2 instead of ^, we want to set 2 as the argument
   /// of the pow function directly.
-  void addPow(TeXFunction pow) {
+  void addPow(TeXFunction pow, String raw) {
     final posBefore = currentNode.courserPosition - 1;
 
     /// We don't allow having to pow's next to each other (x^2^2), since this
@@ -980,10 +985,10 @@ class MathFieldEditingController extends ChangeNotifier {
     }
     if (pow.expression.endsWith('2')) {
       final powCopy = TeXFunction('^', pow.parent, pow.args, pow.argNodes);
-      powCopy.argNodes.first.addTeX(const TeXLeaf('2'));
-      currentNode.addTeX(powCopy);
+      powCopy.argNodes.first.addTeX(const TeXLeaf('2'), '2');
+      currentNode.addTeX(powCopy, raw);
     } else {
-      currentNode.addTeX(pow);
+      currentNode.addTeX(pow, raw);
       currentNode = pow.argNodes.first;
     }
   }
@@ -992,7 +997,7 @@ class MathFieldEditingController extends ChangeNotifier {
   ///
   /// There are two options: Either we divide the previous term, or we add an
   /// empty frac.
-  void addFrac(TeXFunction frac) {
+  void addFrac(TeXFunction frac, String raw) {
     // We first want to divide the list with children at the current courser
     // position. This way, we can always look at the last element in the list,
     // when taking the numerator, and don't need to keep track of the index.
@@ -1026,7 +1031,7 @@ class MathFieldEditingController extends ChangeNotifier {
       // current node's children list.
       currentNode.courserPosition = currentNode.children.length;
     }
-    currentNode.addTeX(frac);
+    currentNode.addTeX(frac, raw);
     // We know want to add all elements that we saved earlier to the end of
     // the list.
     currentNode.children.addAll(tail);
@@ -1171,5 +1176,39 @@ class MathFieldKeyboardController extends ChangeNotifier {
   void toggleKeyboard() {
     _keyboardOpen = !_keyboardOpen;
     notifyListeners();
+  }
+}
+
+/// Tests that a list of strings ends with a value exactly, without taking
+/// partial strings from any item.
+extension EndsWithExactly on List<String> {
+  /// Tests that a list of strings ends with a value exactly, without taking
+  /// partial strings from any item.
+  bool endsWithExactly(String value) {
+    for(var i = length - 1; i >= 0; i--) {
+      final currentValue = sublist(i).join('');
+      if(currentValue == value) {
+        return true;
+      } else if(currentValue.length > value.length) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// Gets the index of the first item in the list that starts a sequence that
+  /// matches value exactly, without taking any partial list items.
+  ///
+  /// Returns -1 if the item can't be found.
+  int endsWithExactlyLength(String value) {
+    for(var i = length - 1; i >= 0; i--) {
+      final currentValue = sublist(i).join('');
+      if(currentValue == value) {
+        return length - i;
+      } else if(currentValue.length > value.length) {
+        return -1;
+      }
+    }
+    return -1;
   }
 }

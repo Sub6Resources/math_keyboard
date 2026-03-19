@@ -16,6 +16,9 @@ class TeXNode {
   /// A block can have one or more child blocks.
   final List<TeX> children = [];
 
+  /// A node keeps track of its raw characters
+  final List<String> rawInput = [];
+
   /// Sets the courser to the actual position.
   void setCursor() {
     children.insert(courserPosition, const Cursor());
@@ -69,8 +72,9 @@ class TeXNode {
     return NavigationState.success;
   }
 
-  /// Adds a new node.
-  void addTeX(TeX teX) {
+  /// Adds a new node and records raw input.
+  void addTeX(TeX teX, String raw) {
+    rawInput.insert(courserPosition, raw);
     children.insert(courserPosition, teX);
     courserPosition++;
   }
@@ -86,6 +90,11 @@ class TeXNode {
       return NavigationState.func;
     }
     children.removeAt(courserPosition);
+    try {
+      rawInput.removeAt(courserPosition);
+    } on RangeError catch(e) {
+      print("For input '${rawInput.join(",")}' caught: $e");
+    }
     setCursor();
     return NavigationState.success;
   }
@@ -155,6 +164,8 @@ class TeXFunction extends TeX {
         return '^{';
       case TeXArg.braces_lr:
         return r'\left{';
+      case TeXArg.braces_d:
+        return r'{d';
       case TeXArg.brackets:
         return '[';
       case TeXArg.brackets_lr:
@@ -174,6 +185,7 @@ class TeXFunction extends TeX {
       case TeXArg.braces:
       case TeXArg.underscore_braces:
       case TeXArg.caret_braces:
+      case TeXArg.braces_d:
         return '}';
       case TeXArg.braces_lr:
         return r'\right}';
@@ -277,6 +289,11 @@ enum TeXArg {
   /// These braces are visible and adjust to automatically match the height
   /// of internal content.
   braces_lr,
+
+  /// {d }
+  ///
+  /// These braces are used only in differentiation
+  braces_d,
 
   /// [ ]
   ///
